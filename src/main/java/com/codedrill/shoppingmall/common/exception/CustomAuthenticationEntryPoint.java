@@ -9,6 +9,8 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
+import static com.codedrill.shoppingmall.common.config.JwtAuthenticationFilter.ATTRIBUTE_TOKEN_ERROR;
+
 @Slf4j
 @Component
 public class CustomAuthenticationEntryPoint implements AuthenticationEntryPoint {

@@ -23,6 +23,8 @@ import java.util.Collections;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    public static final String ATTRIBUTE_TOKEN_ERROR = "token_error";
+
     private final JwtUtil jwtUtil;
 
     @Override

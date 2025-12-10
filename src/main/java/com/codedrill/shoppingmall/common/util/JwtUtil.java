@@ -5,6 +5,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -17,8 +18,17 @@ public class JwtUtil {
 
     private final JwtConfig jwtConfig;
 
+    @Value("${jwt.secret}")
+    String jwtSecretStr;
+
+    @Value("${jwt.token.access-expiration-time}")
+    public static Long AC_EXPIRATION_IN_MS;
+
+    @Value("${jwt.token.refresh-expiration-time}")
+    public static Long RF_EXPIRATION_IN_MS;
+
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtConfig.getSecret().getBytes(StandardCharsets.UTF_8));
+        return Keys.hmacShaKeyFor(jwtSecretStr.getBytes(StandardCharsets.UTF_8));
     }
 
     public String generateAccessToken(Long userId, String email, String role) {

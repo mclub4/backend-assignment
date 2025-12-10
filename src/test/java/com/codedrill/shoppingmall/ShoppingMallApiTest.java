@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -13,11 +13,17 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import com.codedrill.shoppingmall.user.repository.UserRepository;
+import com.codedrill.shoppingmall.user.entity.User;
 
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -30,10 +36,16 @@ class ShoppingMallApiTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private static int totalScore = 0;
-    private static final int MAX_SCORE = 120;
+    private static final int MAX_SCORE = 125;
     private static Long productId = null;
     private static Long orderId = null;
     private static Long userId = null;
@@ -124,7 +136,52 @@ class ShoppingMallApiTest {
 
     @Test
     @Order(3)
-    @DisplayName("3. 로그인 - 일반 사용자")
+    @DisplayName("3. 비밀번호 암호화 검증")
+    void testPasswordEncryption() throws Exception {
+        String plainPassword = "EncryptTest1234!";
+        String request = """
+                {
+                    "email": "encrypt@test.com",
+                    "password": "%s",
+                    "name": "암호화테스트"
+                }
+                """.formatted(plainPassword);
+
+        MvcResult result = mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andReturn();
+
+        String response = result.getResponse().getContentAsString();
+        Map<String, Object> responseMap = objectMapper.readValue(response, Map.class);
+        Map<String, Object> data = (Map<String, Object>) responseMap.get("data");
+        Long testUserId = Long.valueOf(data.get("id").toString());
+
+        // 데이터베이스에서 사용자 조회
+        User savedUser = userRepository.findById(testUserId)
+                .orElseThrow(() -> new AssertionError("사용자를 찾을 수 없습니다."));
+
+        String savedPassword = savedUser.getPassword();
+
+        // 1. 원본 비밀번호와 저장된 비밀번호가 다른지 확인
+        assertNotEquals(plainPassword, savedPassword, "비밀번호가 암호화되지 않았습니다.");
+
+        // 2. BCrypt 형식인지 확인 (BCrypt 해시는 $2a$, $2b$, $2y$로 시작)
+        assertTrue(savedPassword.startsWith("$2a$") || savedPassword.startsWith("$2b$") || savedPassword.startsWith("$2y$"),
+                "비밀번호가 BCrypt 형식이 아닙니다. 저장된 비밀번호: " + savedPassword);
+
+        // 3. 원본 비밀번호와 저장된 비밀번호가 매칭되는지 확인
+        assertTrue(passwordEncoder.matches(plainPassword, savedPassword),
+                "비밀번호 인코더를 통한 검증이 실패했습니다.");
+
+        addScore(5, "비밀번호 암호화 검증");
+    }
+
+    @Test
+    @Order(4)
+    @DisplayName("4. 로그인 - 일반 사용자")
     void testLoginUser() throws Exception {
         String request = """
                 {
@@ -144,8 +201,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(4)
-    @DisplayName("4. 로그인 - 관리자")
+    @Order(5)
+    @DisplayName("5. 로그인 - 관리자")
     void testLoginAdmin() throws Exception {
         String request = """
                 {
@@ -167,8 +224,8 @@ class ShoppingMallApiTest {
     // ==================== 상품 관련 테스트 ====================
 
     @Test
-    @Order(5)
-    @DisplayName("5. 상품 등록")
+    @Order(6)
+    @DisplayName("6. 상품 등록")
     @WithMockUser(roles = "ADMIN")
     void testCreateProduct() throws Exception {
         String request = """
@@ -200,8 +257,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(6)
-    @DisplayName("6. 상품 목록 조회 (페이지네이션)")
+    @Order(7)
+    @DisplayName("7. 상품 목록 조회 (페이지네이션)")
     void testGetProductList() throws Exception {
         mockMvc.perform(get("/api/v1/products")
                         .param("page", "0")
@@ -218,8 +275,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(7)
-    @DisplayName("7. 상품 단건 조회")
+    @Order(8)
+    @DisplayName("8. 상품 단건 조회")
     void testGetProduct() throws Exception {
         mockMvc.perform(get("/api/v1/products/" + productId))
                 .andExpect(status().isOk())
@@ -233,8 +290,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(8)
-    @DisplayName("8. 상품 수정")
+    @Order(9)
+    @DisplayName("9. 상품 수정")
     @WithMockUser(roles = "ADMIN")
     void testUpdateProduct() throws Exception {
         String request = """
@@ -259,8 +316,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(9)
-    @DisplayName("9. 상품 승인")
+    @Order(10)
+    @DisplayName("10. 상품 승인")
     @WithMockUser(roles = "ADMIN")
     void testApproveProduct() throws Exception {
         mockMvc.perform(patch("/api/v1/products/" + productId + "/approve"))
@@ -272,8 +329,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(10)
-    @DisplayName("10. 상품 삭제 (Soft Delete)")
+    @Order(11)
+    @DisplayName("11. 상품 삭제 (Soft Delete)")
     @WithMockUser(roles = "ADMIN")
     void testDeleteProduct() throws Exception {
         mockMvc.perform(delete("/api/v1/products/" + productId))
@@ -290,8 +347,8 @@ class ShoppingMallApiTest {
     // ==================== 주문 관련 테스트 ====================
 
     @Test
-    @Order(11)
-    @DisplayName("11. 주문 생성")
+    @Order(12)
+    @DisplayName("12. 주문 생성")
     void testCreateOrder() throws Exception {
         // 먼저 새로운 상품 생성 (관리자 권한 필요)
         String productRequest = """
@@ -316,7 +373,7 @@ class ShoppingMallApiTest {
 
         // 상품 승인
         mockMvc.perform(patch("/api/v1/products/" + orderProductId + "/approve")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
 
         // 주문 생성 (일반 사용자 권한)
         String orderRequest = """
@@ -349,8 +406,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(12)
-    @DisplayName("12. 내 주문 목록 조회")
+    @Order(13)
+    @DisplayName("13. 내 주문 목록 조회")
     @WithMockUser(roles = "USER")
     void testGetMyOrders() throws Exception {
         mockMvc.perform(get("/api/v1/orders/my")
@@ -364,8 +421,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(13)
-    @DisplayName("13. 주문 상세 조회")
+    @Order(14)
+    @DisplayName("14. 주문 상세 조회")
     @WithMockUser(roles = "USER")
     void testGetOrder() throws Exception {
         mockMvc.perform(get("/api/v1/orders/" + orderId))
@@ -379,8 +436,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(14)
-    @DisplayName("14. 주문 결제")
+    @Order(15)
+    @DisplayName("15. 주문 결제")
     @WithMockUser(roles = "USER")
     void testPayOrder() throws Exception {
         mockMvc.perform(patch("/api/v1/orders/" + orderId + "/pay"))
@@ -392,8 +449,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(15)
-    @DisplayName("15. 주문 완료")
+    @Order(16)
+    @DisplayName("16. 주문 완료")
     @WithMockUser(roles = "USER")
     void testCompleteOrder() throws Exception {
         mockMvc.perform(patch("/api/v1/orders/" + orderId + "/complete"))
@@ -405,8 +462,8 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(16)
-    @DisplayName("16. 주문 취소 (새 주문 생성 후)")
+    @Order(17)
+    @DisplayName("17. 주문 취소 (새 주문 생성 후)")
     void testCancelOrder() throws Exception {
         // 새로운 상품 생성 (관리자 권한)
         String productRequest = """
@@ -430,7 +487,7 @@ class ShoppingMallApiTest {
         Long cancelProductId = Long.valueOf(productData.get("id").toString());
 
         mockMvc.perform(patch("/api/v1/products/" + cancelProductId + "/approve")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
 
         // 주문 생성 (일반 사용자 권한)
         String orderRequest = """
