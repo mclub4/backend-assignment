@@ -5,6 +5,7 @@ import com.codedrill.shoppingmall.common.exception.CustomAuthenticationEntryPoin
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -36,8 +37,25 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
                 .authorizeHttpRequests(auth -> auth
+                        // 인증 관련 API는 모두 허용
                         .requestMatchers("/api/v1/auth/**").permitAll()
-                        .anyRequest().authenticated()
+                        
+                        // 상품 관련 API - ADMIN만 접근 가능
+                        .requestMatchers(HttpMethod.POST, "/api/v1/products").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/products/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/products/**").hasRole("ADMIN")
+                        
+                        // 상품 조회는 인증된 사용자 모두 접근 가능 (USER, ADMIN)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products/**").permitAll()
+                        
+                        // 주문 관련 API는 인증된 사용자 모두 접근 가능
+                        .requestMatchers("/api/v1/orders/**").authenticated()
+                        
+                        // 사용자 관련 API는 인증된 사용자 모두 접근 가능
+                        .requestMatchers("/api/v1/users/**").authenticated()
+                        
+                        // 나머지 요청은 인증 필요
+                        .anyRequest().permitAll()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(exception -> exception

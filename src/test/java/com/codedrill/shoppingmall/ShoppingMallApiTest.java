@@ -1,5 +1,7 @@
 package com.codedrill.shoppingmall;
 
+import com.codedrill.shoppingmall.user.entity.User;
+import com.codedrill.shoppingmall.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.*;
@@ -8,19 +10,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import com.codedrill.shoppingmall.user.repository.UserRepository;
-import com.codedrill.shoppingmall.user.entity.User;
 
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -138,7 +138,7 @@ class ShoppingMallApiTest {
     @Order(3)
     @DisplayName("3. 비밀번호 암호화 검증")
     void testPasswordEncryption() throws Exception {
-        String plainPassword = "EncryptTest1234!";
+        String plainPassword = "Encrypt1!@";
         String request = """
                 {
                     "email": "encrypt@test.com",
@@ -183,6 +183,19 @@ class ShoppingMallApiTest {
     @Order(4)
     @DisplayName("4. 로그인 - 일반 사용자")
     void testLoginUser() throws Exception {
+        String signupRequest = """
+                {
+                    "email": "user@test.com",
+                    "password": "Test1234!",
+                    "name": "테스트유저"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(signupRequest))
+                .andExpect(status().isOk());
+
         String request = """
                 {
                     "email": "user@test.com",
@@ -547,11 +560,11 @@ class ShoppingMallApiTest {
         String loginResponse = loginResult.getResponse().getContentAsString();
         Map<String, Object> loginResponseMap = objectMapper.readValue(loginResponse, Map.class);
         Map<String, Object> loginData = (Map<String, Object>) loginResponseMap.get("data");
-        
+
         // refreshToken이 있는지 확인 (구현 여부에 따라 선택적)
         if (loginData.containsKey("refreshToken")) {
             String refreshToken = (String) loginData.get("refreshToken");
-            
+
             // Refresh Token으로 새로운 Access Token 발급
             String refreshRequest = """
                     {
@@ -617,7 +630,8 @@ class ShoppingMallApiTest {
         // 15개의 동시 요청 시뮬레이션
         int successCount = 0;
         int failCount = 0;
-        
+        Object object = new Object[0];
+
         for (int i = 0; i < 15; i++) {
             try {
                 MvcResult result = mockMvc.perform(post("/api/v1/orders")
@@ -625,24 +639,30 @@ class ShoppingMallApiTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(orderRequest))
                         .andReturn();
-                
+
                 if (result.getResponse().getStatus() == 200) {
-                    successCount++;
+                    synchronized (object) {
+                        successCount++;
+                    }
                 } else {
-                    failCount++;
+                    synchronized (object) {
+                        failCount++;
+                    }
                 }
             } catch (Exception e) {
-                failCount++;
+                synchronized (object) {
+                    failCount++;
+                }
             }
         }
 
         // 재고가 0 아래로 내려가지 않았는지 확인
         // 최대 10개의 주문만 성공해야 함
-        assertTrue(successCount <= 10, 
+        assertTrue(successCount <= 10,
                 "재고보다 많은 주문이 성공했습니다. 성공: " + successCount + ", 실패: " + failCount);
-        
+
         // 최소 5개 이상의 주문이 실패해야 함 (재고 보호)
-        assertTrue(failCount >= 5, 
+        assertTrue(failCount >= 5,
                 "동시성 문제가 해결되지 않았습니다. 성공: " + successCount + ", 실패: " + failCount);
 
         addScore(3, "동시성 문제 - 재고 차감 Race Condition 예방");
@@ -655,37 +675,37 @@ class ShoppingMallApiTest {
     void testNPlusOneProblem() throws Exception {
         // 주문 목록 조회 시 N+1 문제가 발생하지 않는지 확인
         // 실제로는 쿼리 로그를 확인해야 하지만, 테스트에서는 응답 시간이나 쿼리 개수로 판단
-        
+
         long startTime = System.currentTimeMillis();
-        
+
         mockMvc.perform(get("/api/v1/orders/my")
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data").exists());
-        
+
         long endTime = System.currentTimeMillis();
         long responseTime = endTime - startTime;
-        
+
         // N+1 문제가 해결되었다면 응답 시간이 합리적이어야 함
         // (실제로는 쿼리 개수를 확인해야 하지만, 테스트에서는 시간으로 간접 확인)
-        assertTrue(responseTime < 5000, 
+        assertTrue(responseTime < 5000,
                 "N+1 문제가 발생했을 가능성이 있습니다. 응답 시간: " + responseTime + "ms");
-        
+
         // 주문 상세 조회도 테스트
         if (orderId != null) {
             startTime = System.currentTimeMillis();
-            
+
             mockMvc.perform(get("/api/v1/orders/" + orderId))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("SUCCESS"))
                     .andExpect(jsonPath("$.data.items").isArray());
-            
+
             endTime = System.currentTimeMillis();
             responseTime = endTime - startTime;
-            
-            assertTrue(responseTime < 2000, 
+
+            assertTrue(responseTime < 2000,
                     "N+1 문제가 발생했을 가능성이 있습니다. 응답 시간: " + responseTime + "ms");
         }
 
@@ -698,7 +718,7 @@ class ShoppingMallApiTest {
     void testAsyncProcessing() throws Exception {
         // 비동기 처리가 구현된 경우를 테스트
         // 예: 주문 완료 후 알림 전송 등
-        
+
         // 주문 생성
         String productRequest = """
                 {
@@ -736,20 +756,20 @@ class ShoppingMallApiTest {
 
         // 주문 생성 (비동기 처리가 있다면 응답은 빠르게 반환되어야 함)
         long startTime = System.currentTimeMillis();
-        
+
         mockMvc.perform(post("/api/v1/orders")
                         .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderRequest))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
-        
+
         long endTime = System.currentTimeMillis();
         long responseTime = endTime - startTime;
-        
+
         // 비동기 처리가 구현되었다면 응답 시간이 짧아야 함
         // (실제 비동기 작업은 백그라운드에서 처리)
-        assertTrue(responseTime < 3000, 
+        assertTrue(responseTime < 3000,
                 "비동기 처리가 제대로 구현되지 않았을 수 있습니다. 응답 시간: " + responseTime + "ms");
 
         addScore(2, "비동기 처리 검증");
