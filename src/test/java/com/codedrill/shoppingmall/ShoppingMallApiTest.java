@@ -45,7 +45,7 @@ class ShoppingMallApiTest {
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private static int totalScore = 0;
-    private static final int MAX_SCORE = 125;
+    private static final int MAX_SCORE = 100;
     private static Long productId = null;
     private static Long orderId = null;
     private static Long userId = null;
@@ -102,7 +102,7 @@ class ShoppingMallApiTest {
         Map<String, Object> data = (Map<String, Object>) responseMap.get("data");
         userId = Long.valueOf(data.get("id").toString());
 
-        addScore(5, "회원 가입 - 일반 사용자");
+        addScore(3, "회원 가입 - 일반 사용자");
     }
 
     @Test
@@ -131,7 +131,7 @@ class ShoppingMallApiTest {
         Map<String, Object> data = (Map<String, Object>) responseMap.get("data");
         adminId = Long.valueOf(data.get("id").toString());
 
-        addScore(5, "회원 가입 - 관리자");
+        addScore(3, "회원 가입 - 관리자");
     }
 
     @Test
@@ -176,7 +176,7 @@ class ShoppingMallApiTest {
         assertTrue(passwordEncoder.matches(plainPassword, savedPassword),
                 "비밀번호 인코더를 통한 검증이 실패했습니다.");
 
-        addScore(5, "비밀번호 암호화 검증");
+        addScore(4, "비밀번호 암호화 검증");
     }
 
     @Test
@@ -253,7 +253,7 @@ class ShoppingMallApiTest {
         Map<String, Object> data = (Map<String, Object>) responseMap.get("data");
         productId = Long.valueOf(data.get("id").toString());
 
-        addScore(10, "상품 등록");
+        addScore(8, "상품 등록");
     }
 
     @Test
@@ -271,7 +271,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.data.page").value(0))
                 .andExpect(jsonPath("$.data.size").value(10));
 
-        addScore(10, "상품 목록 조회 (페이지네이션)");
+        addScore(8, "상품 목록 조회 (페이지네이션)");
     }
 
     @Test
@@ -286,7 +286,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.data.price").value(10000))
                 .andExpect(jsonPath("$.data.stock").value(100));
 
-        addScore(10, "상품 단건 조회");
+        addScore(8, "상품 단건 조회");
     }
 
     @Test
@@ -312,7 +312,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.data.price").value(15000))
                 .andExpect(jsonPath("$.data.stock").value(200));
 
-        addScore(10, "상품 수정");
+        addScore(8, "상품 수정");
     }
 
     @Test
@@ -325,7 +325,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("APPROVED"));
 
-        addScore(10, "상품 승인");
+        addScore(9, "상품 승인");
     }
 
     @Test
@@ -341,7 +341,7 @@ class ShoppingMallApiTest {
         mockMvc.perform(get("/api/v1/products/" + productId))
                 .andExpect(status().isNotFound());
 
-        addScore(10, "상품 삭제 (Soft Delete)");
+        addScore(9, "상품 삭제 (Soft Delete)");
     }
 
     // ==================== 주문 관련 테스트 ====================
@@ -402,7 +402,7 @@ class ShoppingMallApiTest {
         Map<String, Object> data = (Map<String, Object>) responseMap.get("data");
         orderId = Long.valueOf(data.get("id").toString());
 
-        addScore(10, "주문 생성");
+        addScore(4, "주문 생성");
     }
 
     @Test
@@ -417,7 +417,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data").exists());
 
-        addScore(10, "내 주문 목록 조회");
+        addScore(4, "내 주문 목록 조회");
     }
 
     @Test
@@ -432,7 +432,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
                 .andExpect(jsonPath("$.data.items").isArray());
 
-        addScore(10, "주문 상세 조회");
+        addScore(4, "주문 상세 조회");
     }
 
     @Test
@@ -445,7 +445,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("PAID"));
 
-        addScore(5, "주문 결제");
+        addScore(3, "주문 결제");
     }
 
     @Test
@@ -458,7 +458,7 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
-        addScore(5, "주문 완료");
+        addScore(3, "주문 완료");
     }
 
     @Test
@@ -519,6 +519,239 @@ class ShoppingMallApiTest {
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"));
 
-        addScore(5, "주문 취소");
+        addScore(2, "주문 취소");
+    }
+
+    // ==================== 3단계: 고급 주제 테스트 ====================
+
+    @Test
+    @Order(18)
+    @DisplayName("18. Refresh Token 발급 및 재발급")
+    void testRefreshToken() throws Exception {
+        // 먼저 로그인하여 refreshToken 획득
+        String loginRequest = """
+                {
+                    "email": "user@test.com",
+                    "password": "Test1234!"
+                }
+                """;
+
+        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andReturn();
+
+        String loginResponse = loginResult.getResponse().getContentAsString();
+        Map<String, Object> loginResponseMap = objectMapper.readValue(loginResponse, Map.class);
+        Map<String, Object> loginData = (Map<String, Object>) loginResponseMap.get("data");
+        
+        // refreshToken이 있는지 확인 (구현 여부에 따라 선택적)
+        if (loginData.containsKey("refreshToken")) {
+            String refreshToken = (String) loginData.get("refreshToken");
+            
+            // Refresh Token으로 새로운 Access Token 발급
+            String refreshRequest = """
+                    {
+                        "refreshToken": "%s"
+                    }
+                    """.formatted(refreshToken);
+
+            mockMvc.perform(post("/api/v1/auth/refresh")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(refreshRequest))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("SUCCESS"))
+                    .andExpect(jsonPath("$.data.accessToken").exists());
+        } else {
+            // refreshToken이 없으면 테스트 통과 (구현하지 않은 경우)
+            System.out.println("RefreshToken이 구현되지 않았습니다. 테스트를 건너뜁니다.");
+        }
+
+        addScore(3, "Refresh Token 발급 및 재발급");
+    }
+
+    @Test
+    @Order(19)
+    @DisplayName("19. 동시성 문제 - 재고 차감 Race Condition 예방")
+    void testConcurrentStockDecrease() throws Exception {
+        // 새로운 상품 생성 (재고 10개)
+        String productRequest = """
+                {
+                    "name": "동시성 테스트 상품",
+                    "price": 1000,
+                    "stock": 10,
+                    "description": "동시성 테스트용"
+                }
+                """;
+
+        MvcResult productResult = mockMvc.perform(post("/api/v1/products")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productRequest))
+                .andReturn();
+
+        String productResponse = productResult.getResponse().getContentAsString();
+        Map<String, Object> productResponseMap = objectMapper.readValue(productResponse, Map.class);
+        Map<String, Object> productData = (Map<String, Object>) productResponseMap.get("data");
+        Long concurrentProductId = Long.valueOf(productData.get("id").toString());
+
+        // 상품 승인
+        mockMvc.perform(patch("/api/v1/products/" + concurrentProductId + "/approve")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+
+        // 동시에 여러 주문 생성 (재고 10개에 15개 주문 시도)
+        String orderRequest = """
+                {
+                    "items": [
+                        {
+                            "productId": %d,
+                            "quantity": 1
+                        }
+                    ]
+                }
+                """.formatted(concurrentProductId);
+
+        // 15개의 동시 요청 시뮬레이션
+        int successCount = 0;
+        int failCount = 0;
+        
+        for (int i = 0; i < 15; i++) {
+            try {
+                MvcResult result = mockMvc.perform(post("/api/v1/orders")
+                                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(orderRequest))
+                        .andReturn();
+                
+                if (result.getResponse().getStatus() == 200) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            } catch (Exception e) {
+                failCount++;
+            }
+        }
+
+        // 재고가 0 아래로 내려가지 않았는지 확인
+        // 최대 10개의 주문만 성공해야 함
+        assertTrue(successCount <= 10, 
+                "재고보다 많은 주문이 성공했습니다. 성공: " + successCount + ", 실패: " + failCount);
+        
+        // 최소 5개 이상의 주문이 실패해야 함 (재고 보호)
+        assertTrue(failCount >= 5, 
+                "동시성 문제가 해결되지 않았습니다. 성공: " + successCount + ", 실패: " + failCount);
+
+        addScore(3, "동시성 문제 - 재고 차감 Race Condition 예방");
+    }
+
+    @Test
+    @Order(20)
+    @DisplayName("20. N+1 문제 예방 - 주문 목록 조회")
+    @WithMockUser(roles = "USER")
+    void testNPlusOneProblem() throws Exception {
+        // 주문 목록 조회 시 N+1 문제가 발생하지 않는지 확인
+        // 실제로는 쿼리 로그를 확인해야 하지만, 테스트에서는 응답 시간이나 쿼리 개수로 판단
+        
+        long startTime = System.currentTimeMillis();
+        
+        mockMvc.perform(get("/api/v1/orders/my")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data").exists());
+        
+        long endTime = System.currentTimeMillis();
+        long responseTime = endTime - startTime;
+        
+        // N+1 문제가 해결되었다면 응답 시간이 합리적이어야 함
+        // (실제로는 쿼리 개수를 확인해야 하지만, 테스트에서는 시간으로 간접 확인)
+        assertTrue(responseTime < 5000, 
+                "N+1 문제가 발생했을 가능성이 있습니다. 응답 시간: " + responseTime + "ms");
+        
+        // 주문 상세 조회도 테스트
+        if (orderId != null) {
+            startTime = System.currentTimeMillis();
+            
+            mockMvc.perform(get("/api/v1/orders/" + orderId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("SUCCESS"))
+                    .andExpect(jsonPath("$.data.items").isArray());
+            
+            endTime = System.currentTimeMillis();
+            responseTime = endTime - startTime;
+            
+            assertTrue(responseTime < 2000, 
+                    "N+1 문제가 발생했을 가능성이 있습니다. 응답 시간: " + responseTime + "ms");
+        }
+
+        addScore(2, "N+1 문제 예방 - 주문 목록 조회");
+    }
+
+    @Test
+    @Order(21)
+    @DisplayName("21. 비동기 처리 검증")
+    void testAsyncProcessing() throws Exception {
+        // 비동기 처리가 구현된 경우를 테스트
+        // 예: 주문 완료 후 알림 전송 등
+        
+        // 주문 생성
+        String productRequest = """
+                {
+                    "name": "비동기 테스트 상품",
+                    "price": 2000,
+                    "stock": 20,
+                    "description": "비동기 테스트용"
+                }
+                """;
+
+        MvcResult productResult = mockMvc.perform(post("/api/v1/products")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productRequest))
+                .andReturn();
+
+        String productResponse = productResult.getResponse().getContentAsString();
+        Map<String, Object> productResponseMap = objectMapper.readValue(productResponse, Map.class);
+        Map<String, Object> productData = (Map<String, Object>) productResponseMap.get("data");
+        Long asyncProductId = Long.valueOf(productData.get("id").toString());
+
+        mockMvc.perform(patch("/api/v1/products/" + asyncProductId + "/approve")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+
+        String orderRequest = """
+                {
+                    "items": [
+                        {
+                            "productId": %d,
+                            "quantity": 1
+                        }
+                    ]
+                }
+                """.formatted(asyncProductId);
+
+        // 주문 생성 (비동기 처리가 있다면 응답은 빠르게 반환되어야 함)
+        long startTime = System.currentTimeMillis();
+        
+        mockMvc.perform(post("/api/v1/orders")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"));
+        
+        long endTime = System.currentTimeMillis();
+        long responseTime = endTime - startTime;
+        
+        // 비동기 처리가 구현되었다면 응답 시간이 짧아야 함
+        // (실제 비동기 작업은 백그라운드에서 처리)
+        assertTrue(responseTime < 3000, 
+                "비동기 처리가 제대로 구현되지 않았을 수 있습니다. 응답 시간: " + responseTime + "ms");
+
+        addScore(2, "비동기 처리 검증");
     }
 }

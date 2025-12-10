@@ -21,8 +21,8 @@ public class ProductController {
     @PostMapping
     @Operation(summary = "상품 등록")
     public Response<ProductResponse> createProduct(@Valid @RequestBody ProductCreateRequest request) {
-        //TODO: 상품 등록 구현
-        return Response.success();
+        ProductResponse product = productService.createProduct(request);
+        return Response.success(product);
     }
 
     @GetMapping
@@ -34,15 +34,15 @@ public class ProductController {
             @RequestParam(required = false) Long maxPrice,
             @RequestParam(required = false) String name
     ) {
-        //TODO: 상품 목록 조회 구현
-        return Response.success();
+        ProductPageResponse productPage = productService.getProductList(page, size, minPrice, maxPrice, name);
+        return Response.success(productPage);
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "상품 단건 조회")
     public Response<ProductDetailResponse> getProduct(@PathVariable Long id) {
-        //TODO: 상품 단건 조회 구현
-        return Response.success();
+        ProductDetailResponse product = productService.getProduct(id);
+        return Response.success(product);
     }
 
     @PutMapping("/{id}")
@@ -51,22 +51,22 @@ public class ProductController {
             @PathVariable Long id,
             @Valid @RequestBody ProductUpdateRequest request
     ) {
-        //TODO: 상품 수정 구현
-        return Response.success();
+        ProductResponse product = productService.updateProduct(id, request);
+        return Response.success(product);
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "상품 삭제 (Soft Delete)")
     public Response<Void> deleteProduct(@PathVariable Long id) {
-        //TODO: 상품 삭제 구현
+        productService.deleteProduct(id);
         return Response.success();
     }
 
     @PatchMapping("/{id}/approve")
     @Operation(summary = "상품 승인")
     public Response<ProductResponse> approveProduct(@PathVariable Long id) {
-        //TODO: 상품 승인 구현
-        return Response.success();
+        ProductResponse product = productService.approveProduct(id);
+        return Response.success(product);
     }
 }
 
