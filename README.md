@@ -31,8 +31,11 @@
 
 - **레이어드 아키텍처**: Controller → Service → Repository → Entity
 - **인증/인가**: Spring Security + JWT
-- **데이터베이스**: PostgreSQL (메인 DB), Redis (캐시/세션)
+- **데이터베이스**: PostgreSQL (메인 DB), Redis (캐시 등)
+- **ORM**: JPA, QueryDSL(QueryDSL말고 Native Query 쓰셔도 됩니다.)
 - **API 형식**: RESTful API (`/api/v1/**`)
+- **DTO 매핑**: `MapStruct` 사용 시 반복 매핑 코드를 줄일 수 있습니다.
+  - 예시: `@Mapper(componentModel = "spring")` 인터페이스에 `ProductMapper` 정의 후 `Product` ↔ DTO 변환 메서드 선언.
 
 ---
 
@@ -1292,6 +1295,117 @@ DELETE /api/v1/products/{id}/images/{imageId}
 **추가 고려사항**
   - 이미지 리사이징/썸네일 생성
   - 이미지 최적화
+
+---
+
+### 3-4. 캐싱 (선택)
+
+#### 목표
+- 상품 목록 첫 페이지(예: `page=0`, 기본 size)에 대한 응답을 캐싱하여 조회 성능을 개선합니다.
+
+#### 구현 가이드
+- Spring Cache 사용 (`spring-boot-starter-cache`, `@EnableCaching`).
+- 캐시 저장소: Redis 사용 권장 (이미 의존성 포함).
+- 캐싱 대상:
+  - `GET /api/v1/products?page=0&size=...` (필터 조건이 없는 기본 목록) 응답을 캐싱.
+  - 다른 페이지나 필터(`name`, `minPrice`, `maxPrice`)는 캐싱하지 않음.
+- 캐시 키 설계: `products:page:{page}:size:{size}` (page=0일 때만 저장).
+- 무효화:
+  - 상품 생성/수정/삭제/승인 시 해당 키 무효화(`@CacheEvict`).
+  - 재고/가격 변경에 따라 목록 정보가 바뀌면 무효화.
+
+---
+
+### 3-5. 비동기 처리 (선택)
+
+#### 목표
+- 주요 흐름을 블로킹하지 않으면서 부가 작업을 처리해 성능과 사용자 경험을 개선합니다.
+
+#### 아이디어
+- 주문 생성 후:
+  - 알림/이메일 발송을 `@Async` 메서드로 분리.
+  - 재고 변경 이벤트를 메시지 큐(선택) 또는 비동기 로깅으로 처리.
+- 상품 등록/승인 후:
+  - 검색 인덱스 동기화(선택)를 비동기로 처리.
+
+#### 구현 가이드
+- Spring `@EnableAsync` + `@Async` 사용.
+- 스레드 풀 설정 (`TaskExecutor`)로 기본 풀 크기/큐 사이즈 지정.
+- 트랜잭션 경계 주의:
+  - 비동기 메서드에서 필요한 데이터는 DTO 형태로 전달하거나 재조회.
+  - 예외 발생 시 로깅 및 재시도 정책(필요 시) 고려.
+
+---
+
+## 4단계: 배포 & 리버스 프록시 (선택)
+
+### 4-1. Docker 기반 배포
+- **목표**: 애플리케이션을 컨테이너화하고, 이미지 빌드/실행 파이프라인을 구성합니다.
+- **과제**:
+  - `Dockerfile` 작성 (JDK 17, JAR 복사, `ENTRYPOINT ["java","-jar","app.jar"]` 형태).
+  - 멀티스테이지 빌드로 이미지 슬림화.
+  - 로컬에서 `docker build` / `docker run`으로 기동 확인.
+
+### 4-2. 클라우드 배포 (VPC 설계 포함)
+- **목표**: 퍼블릭/프라이빗 서브넷을 가진 VPC에 애플리케이션을 배포합니다.
+- **VPC 구조(예시)**:
+  - 퍼블릭 서브넷 1개: Reverse Proxy/ALB 배치, 인터넷 게이트웨이 연결.
+  - 프라이빗 서브넷 1개: 애플리케이션 인스턴스(EC2) 배치.
+  - RDS(PostgreSQL) & ElastiCache(Redis) 는 프라이빗 서브넷에 배치.
+  - NAT Gateway(선택): 앱이 외부로 나가야 할 경우 사용.
+- **보안**:
+  - SG: 퍼블릭 → 80/443 허용, 프라이빗 앱 SG는 퍼블릭/ALB SG만 허용.
+  - DB/Redis SG는 앱 SG에서만 접근 허용.
+- **과제**:
+  - 위 구조로 VPC, Subnet, IGW, (필요시 NAT) 구성.
+  - 애플리케이션 이미지를 레지스트리(ECR 등)에 업로드 후 EC2에 배포.
+  - RDS/ElastiCache 연결 설정 및 보안 그룹 구성.
+
+### 4-3. 리버스 프록시 구성
+- **목표**: Nginx(또는 ALB)로 HTTPS 종료 및 경로 라우팅을 수행합니다.
+- **과제**:
+  - 퍼블릭 서브넷에 Nginx/ALB를 두고, 백엔드(프라이빗)로 프록시 패스.
+  - 기본 헬스체크 엔드포인트 지정 (`/actuator/health` 등).
+  - 정적 파일/압축/캐싱 헤더 설정은 선택.
+  - HTTPS 인증서(예: ACM/Let's Encrypt) 적용.
+
+### 4-4. 배포/인프라 테스트 자동화
+- **목표**: 배포 및 인프라 구성을 검증할 수 있는 테스트를 마련합니다.
+- **과제**:
+  - 애플리케이션: `@SpringBootTest` + 간단한 통합 테스트로 헬스 체크 또는 주요 API 1~2개 호출.
+  - 인프라: Testcontainers(선택)로 로컬에서 Postgres/Redis 연동 테스트.
+  - CI에서 `./gradlew test`와 `./gradlew bootJar`를 최소 스텝으로 실행하도록 구성.
+  - 계약/스냅샷 테스트(선택): DTO/Response 구조가 깨지지 않는지 검증.
+  - E2E(선택): 간단한 API 시나리오를 RestAssured 등으로 작성.
+
+### 4-5. 성능/부하 테스트
+- k6/JMeter 등으로 기본 시나리오 부하 테스트(목록 조회, 주문 생성).
+- 목표 TPS/지연시간을 정하고 결과를 정리.
+
+---
+
+## 5단계: 심화 주제 (난이도 ↑)
+
+### 5-1. 관측 가능성(Observability)
+- Distributed Tracing: OpenTelemetry + OTLP(jaeger/tempo 등)로 주요 API 트레이스 수집.
+- Metrics: Micrometer + Prometheus/Grafana로 주요 비즈니스/시스템 메트릭 노출.
+- Log 구조화: JSON 로그 + Correlation ID/Trace ID 포함.
+
+### 5-2. 회복탄력성(Resilience)
+- Resilience4j로 `retry`, `circuit breaker`, `rate limiter` 적용 (예: 외부 결제/메일).
+- 타임아웃/폴백 전략 정의, 실패 메트릭 수집.
+
+### 5-3. 메시지/이벤트 기반 확장
+- 주문 이벤트를 메시지 큐(Kafka/SQS/RabbitMQ 등)로 발행, 비동기 후처리(알림/적립금 등).
+- Outbox 패턴(선택)으로 트랜잭션 정합성 확보.
+
+### 5-4. 성능/부하 테스트
+- k6/JMeter 등으로 기본 시나리오 부하 테스트(목록 조회, 주문 생성).
+- 목표 TPS/지연시간을 정하고 결과를 README에 정리.
+
+### 5-5. 배포 전략 고도화
+- Blue-Green 또는 Rolling 업데이트 시나리오 정리 및 스크립트화.
+- 데이터베이스 마이그레이션 전략 명시(예: Flyway)와 롤백 절차 문서화.
 
 ---
 
