@@ -30,7 +30,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-@Deprecated
 public class OrderService {
 
     // OrderItem 생성 전 임시 데이터 클래스

@@ -46,6 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 @ActiveProfiles("test")
 @Transactional
+@Deprecated
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ShoppingMallApiTest {
 
