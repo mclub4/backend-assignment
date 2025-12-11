@@ -48,7 +48,7 @@ public class OrderController {
     @GetMapping("/{id}")
     @Operation(summary = "주문 상세 조회")
     public Response<OrderDetailResponse> getOrder(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @AuthenticationPrincipal PrincipalDetails user
     ) {
         OrderDetailResponse order = orderService.getOrder(id, user);
@@ -58,7 +58,7 @@ public class OrderController {
     @PatchMapping("/{id}/pay")
     @Operation(summary = "주문 결제")
     public Response<OrderResponse> payOrder(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @AuthenticationPrincipal PrincipalDetails user
     ) {
         OrderResponse order = orderService.payOrder(id, user);
@@ -68,7 +68,7 @@ public class OrderController {
     @PatchMapping("/{id}/cancel")
     @Operation(summary = "주문 취소")
     public Response<OrderResponse> cancelOrder(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @AuthenticationPrincipal PrincipalDetails user
     ) {
         OrderResponse order = orderService.cancelOrder(id, user);
@@ -78,7 +78,7 @@ public class OrderController {
     @PatchMapping("/{id}/complete")
     @Operation(summary = "주문 완료")
     public Response<OrderResponse> completeOrder(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @AuthenticationPrincipal PrincipalDetails user
     ) {
         OrderResponse order = orderService.completeOrder(id, user);

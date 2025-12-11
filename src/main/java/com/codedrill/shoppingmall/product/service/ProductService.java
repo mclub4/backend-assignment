@@ -6,7 +6,7 @@ import com.codedrill.shoppingmall.common.exception.ErrorCode;
 import com.codedrill.shoppingmall.common.util.SecurityUtil;
 import com.codedrill.shoppingmall.product.dto.*;
 import com.codedrill.shoppingmall.product.entity.Product;
-import com.codedrill.shoppingmall.product.entity.ProductStatus;
+import com.codedrill.shoppingmall.common.enums.EnumProductStatus;
 import com.codedrill.shoppingmall.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,13 +28,24 @@ public class ProductService {
     private final ProductRepository productRepository;
 
     @Transactional
-    public ProductResponse createProduct(ProductCreateRequest request) {
+    public ProductResponse createProduct(ProductCreateRequest request, PrincipalDetails user) {
+        if (user == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+
+        // PENDING 상태인 상품이 이미 있으면 새로운 상품 등록 불가
+        long pendingCount = productRepository.countPendingProductsByUserId(user.getUserId());
+        if (pendingCount > 0) {
+            throw new BusinessException(ErrorCode.PRODUCT_PENDING_EXISTS);
+        }
+
         Product product = Product.builder()
-                .status(ProductStatus.PENDING)
+                .status(EnumProductStatus.PENDING)
                 .name(request.getName())
                 .price(request.getPrice())
                 .stock(request.getStock())
                 .description(request.getDescription())
+                .userId(user.getUserId())
                 .build();
 
         Product savedProduct = productRepository.save(product);
@@ -52,11 +63,11 @@ public class ProductService {
         String statusString;
         if (SecurityUtil.isAdmin(user)) {
             // ADMIN인 경우 Query Param의 status를 사용 (null이면 모든 상태 조회)
-            ProductStatus productStatus = parseStatus(status);
+            EnumProductStatus productStatus = parseStatus(status);
             statusString = productStatus != null ? productStatus.name() : null;
         } else {
             // 일반 사용자는 항상 APPROVED만 조회
-            statusString = ProductStatus.APPROVED.name();
+            statusString = EnumProductStatus.APPROVED.name();
         }
         
         // 상품명 전처리: null 체크, trim, 빈 문자열 처리
@@ -83,7 +94,7 @@ public class ProductService {
         Product product = findByIdAndNotDeleted(id);
         
         // 일반 사용자는 APPROVED만 조회 가능
-        if (!SecurityUtil.isAdmin(user) && product.getStatus() != ProductStatus.APPROVED) {
+        if (!SecurityUtil.isAdmin(user) && product.getStatus() != EnumProductStatus.APPROVED) {
             throw new BusinessException(ErrorCode.PRODUCT_NOT_APPROVED);
         }
         
@@ -91,8 +102,17 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductResponse updateProduct(Long id, ProductUpdateRequest request) {
+    public ProductResponse updateProduct(Long id, ProductUpdateRequest request, PrincipalDetails user) {
+        if (user == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+
         Product product = findByIdAndNotDeleted(id);
+        
+        // 등록한 사용자만 수정 가능 (ADMIN은 모든 상품 수정 가능)
+        if (!SecurityUtil.isAdmin(user) && !product.getUserId().equals(user.getUserId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
         
         product.update(
                 request.getName(),
@@ -114,14 +134,9 @@ public class ProductService {
 
     @Transactional
     public ProductResponse approveProduct(Long id, PrincipalDetails user) {
-        // ADMIN만 승인 가능
-        if (!SecurityUtil.isAdmin(user)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
-
         Product product = findByIdAndNotDeleted(id);
         
-        if (product.getStatus() != ProductStatus.PENDING) {
+        if (product.getStatus() != EnumProductStatus.PENDING) {
             throw new BusinessException(ErrorCode.PRODUCT_NOT_PENDING);
         }
 
@@ -195,13 +210,13 @@ public class ProductService {
      * - null이거나 빈 문자열이면 null 반환 (모든 상태 조회)
      * - 유효하지 않은 값이면 예외 발생
      */
-    private ProductStatus parseStatus(String status) {
+    private EnumProductStatus parseStatus(String status) {
         if (status == null || status.trim().isEmpty()) {
             return null;
         }
         
         try {
-            return ProductStatus.valueOf(status.toUpperCase().trim());
+            return EnumProductStatus.valueOf(status.toUpperCase().trim());
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_PRODUCT_STATUS);
         }

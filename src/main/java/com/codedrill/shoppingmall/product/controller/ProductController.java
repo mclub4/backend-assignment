@@ -22,8 +22,11 @@ public class ProductController {
 
     @PostMapping
     @Operation(summary = "상품 등록")
-    public Response<ProductResponse> createProduct(@Valid @RequestBody ProductCreateRequest request) {
-        ProductResponse product = productService.createProduct(request);
+    public Response<ProductResponse> createProduct(
+            @Valid @RequestBody ProductCreateRequest request,
+            @AuthenticationPrincipal PrincipalDetails user
+    ) {
+        ProductResponse product = productService.createProduct(request, user);
         return Response.success(product);
     }
 
@@ -45,7 +48,7 @@ public class ProductController {
     @GetMapping("/{id}")
     @Operation(summary = "상품 단건 조회")
     public Response<ProductDetailResponse> getProduct(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @AuthenticationPrincipal PrincipalDetails user
     ) {
         ProductDetailResponse product = productService.getProduct(id, user);
@@ -55,16 +58,17 @@ public class ProductController {
     @PutMapping("/{id}")
     @Operation(summary = "상품 수정")
     public Response<ProductResponse> updateProduct(
-            @PathVariable Long id,
-            @Valid @RequestBody ProductUpdateRequest request
+            @PathVariable("id") Long id,
+            @Valid @RequestBody ProductUpdateRequest request,
+            @AuthenticationPrincipal PrincipalDetails user
     ) {
-        ProductResponse product = productService.updateProduct(id, request);
+        ProductResponse product = productService.updateProduct(id, request, user);
         return Response.success(product);
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "상품 삭제 (Soft Delete)")
-    public Response<Void> deleteProduct(@PathVariable Long id) {
+    public Response<Void> deleteProduct(@PathVariable("id") Long id) {
         productService.deleteProduct(id);
         return Response.success();
     }
@@ -72,7 +76,7 @@ public class ProductController {
     @PatchMapping("/{id}/approve")
     @Operation(summary = "상품 승인")
     public Response<ProductResponse> approveProduct(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @AuthenticationPrincipal PrincipalDetails user
     ) {
         ProductResponse product = productService.approveProduct(id, user);

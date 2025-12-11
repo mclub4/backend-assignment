@@ -1,6 +1,7 @@
 package com.codedrill.shoppingmall.product.entity;
 
 import com.codedrill.shoppingmall.common.entity.BaseEntity;
+import com.codedrill.shoppingmall.common.enums.EnumProductStatus;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -19,7 +20,7 @@ public class Product extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private ProductStatus status;
+    private EnumProductStatus status;
 
     @Column(nullable = false, length = 50)
     private String name;
@@ -33,13 +34,17 @@ public class Product extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(nullable = false)
+    private Long userId; // 상품을 등록한 사용자 ID
+
     @Builder
-    public Product(ProductStatus status, String name, Long price, Integer stock, String description) {
+    public Product(EnumProductStatus status, String name, Long price, Integer stock, String description, Long userId) {
         this.status = status;
         this.name = name;
         this.price = price;
         this.stock = stock;
         this.description = description;
+        this.userId = userId;
     }
 
     public void update(String name, Long price, Integer stock, String description) {
@@ -50,7 +55,7 @@ public class Product extends BaseEntity {
     }
 
     public void approve() {
-        this.status = ProductStatus.APPROVED;
+        this.status = EnumProductStatus.APPROVED;
     }
 
     public void decreaseStock(Integer quantity) {

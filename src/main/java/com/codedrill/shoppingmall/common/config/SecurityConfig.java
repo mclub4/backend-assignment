@@ -40,10 +40,11 @@ public class SecurityConfig {
                         // 인증 관련 API는 모두 허용
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         
-                        // 상품 관련 API - ADMIN만 접근 가능
-                        .requestMatchers(HttpMethod.POST, "/api/v1/products").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/products/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/products/**").hasRole("ADMIN")
+                        // 상품 관련 API
+                        .requestMatchers(HttpMethod.POST, "/api/v1/products").authenticated() // 인증된 사용자 모두 등록 가능
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/products/**").authenticated() // 인증된 사용자 (본인만 수정 가능, 서비스 레이어에서 체크)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/products/**").hasRole("ADMIN") // 승인은 ADMIN만
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/products/**").hasRole("ADMIN") // 삭제는 ADMIN만
                         
                         // 상품 조회는 인증된 사용자 모두 접근 가능 (USER, ADMIN)
                         .requestMatchers(HttpMethod.GET, "/api/v1/products/**").permitAll()

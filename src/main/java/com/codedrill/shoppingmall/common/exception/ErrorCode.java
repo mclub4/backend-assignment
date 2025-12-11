@@ -25,6 +25,7 @@ public enum ErrorCode {
     PRODUCT_NOT_APPROVED("PRODUCT_NOT_APPROVED", "승인되지 않은 상품입니다."),
     PRODUCT_ALREADY_APPROVED("PRODUCT_ALREADY_APPROVED", "이미 승인된 상품입니다."),
     PRODUCT_NOT_PENDING("PRODUCT_NOT_PENDING", "승인 대기 중인 상품만 승인할 수 있습니다."),
+    PRODUCT_PENDING_EXISTS("PRODUCT_PENDING_EXISTS", "승인 대기 중인 상품이 이미 존재합니다. 새로운 상품을 등록하려면 기존 상품이 승인되거나 취소되어야 합니다."),
     INVALID_PRODUCT_STATUS("INVALID_PRODUCT_STATUS", "유효하지 않은 상품 상태입니다."),
     
     // 주문

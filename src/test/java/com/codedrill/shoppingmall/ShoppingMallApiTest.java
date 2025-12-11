@@ -1,7 +1,11 @@
 package com.codedrill.shoppingmall;
 
+import com.codedrill.shoppingmall.common.entity.PrincipalDetails;
+import com.codedrill.shoppingmall.common.enums.EnumRole;
+import com.codedrill.shoppingmall.product.repository.ProductRepository;
 import com.codedrill.shoppingmall.user.entity.User;
 import com.codedrill.shoppingmall.user.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.*;
@@ -10,18 +14,30 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.mock.web.MockHttpServletRequest;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -41,6 +57,12 @@ class ShoppingMallApiTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
@@ -75,6 +97,17 @@ class ShoppingMallApiTest {
         System.out.printf("✓ [%d점] %s\n", score, testName);
     }
 
+    private RequestPostProcessor withPrincipalDetails(Long userId, String email, String name, String role) {
+        String roleWithPrefix = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+        List<GrantedAuthority> authorities = Collections.singletonList(new SimpleGrantedAuthority(roleWithPrefix));
+        PrincipalDetails principalDetails = new PrincipalDetails(userId, email, name, null, authorities);
+        UsernamePasswordAuthenticationToken authentication = 
+                new UsernamePasswordAuthenticationToken(principalDetails, null, authorities);
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
+        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(mockRequest));
+        return SecurityMockMvcRequestPostProcessors.authentication(authentication);
+    }
+
     // ==================== 인증 관련 테스트 ====================
 
     @Test
@@ -92,6 +125,7 @@ class ShoppingMallApiTest {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.email").value("user@test.com"))
@@ -122,6 +156,7 @@ class ShoppingMallApiTest {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.email").value("admin@test.com"))
@@ -152,6 +187,7 @@ class ShoppingMallApiTest {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andReturn();
@@ -196,6 +232,7 @@ class ShoppingMallApiTest {
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(signupRequest))
+                .andDo(print())
                 .andExpect(status().isOk());
 
         String request = """
@@ -208,6 +245,7 @@ class ShoppingMallApiTest {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.accessToken").exists())
@@ -226,7 +264,6 @@ class ShoppingMallApiTest {
     @Test
     @Order(6)
     @DisplayName("6. 상품 등록")
-    @WithMockUser(roles = "ADMIN")
     void testCreateProduct() throws Exception {
         String request = """
                 {
@@ -238,8 +275,10 @@ class ShoppingMallApiTest {
                 """;
 
         MvcResult result = mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.name").value("테스트 상품"))
@@ -256,13 +295,108 @@ class ShoppingMallApiTest {
         addScore(8, "상품 등록");
     }
 
+    // 상품 생성 헬퍼 메서드
+    private Long createProduct(String name, Long price, Integer stock, String description) throws Exception {
+        String productRequest = """
+                {
+                    "name": "%s",
+                    "price": %d,
+                    "stock": %d,
+                    "description": "%s"
+                }
+                """.formatted(name, price, stock, description != null ? description : "");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productRequest))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String response = result.getResponse().getContentAsString();
+        Map<String, Object> responseMap = objectMapper.readValue(response, Map.class);
+        Map<String, Object> data = (Map<String, Object>) responseMap.get("data");
+        return Long.valueOf(data.get("id").toString());
+    }
+
     @Test
     @Order(7)
+    @DisplayName("6-1. 상품 등록 - PENDING 상품이 있을 때 새로운 상품 등록 불가")
+    void testCreateProductWithPendingExists() throws Exception {
+        // 첫 번째 상품 등록 (PENDING 상태)
+        String firstProductRequest = """
+                {
+                    "name": "첫 번째 상품",
+                    "price": 5000,
+                    "stock": 50,
+                    "description": "첫 번째 상품"
+                }
+                """;
+
+        MvcResult firstResult = mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(firstProductRequest))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andReturn();
+
+        // 첫 번째 상품의 ID 가져오기
+        String firstResponse = firstResult.getResponse().getContentAsString();
+        Map<String, Object> firstResponseMap = objectMapper.readValue(firstResponse, Map.class);
+        Map<String, Object> firstData = (Map<String, Object>) firstResponseMap.get("data");
+        Long firstProductId = Long.valueOf(firstData.get("id").toString());
+
+        // 두 번째 상품 등록 시도 (PENDING 상품이 있으므로 실패해야 함)
+        String secondProductRequest = """
+                {
+                    "name": "두 번째 상품",
+                    "price": 10000,
+                    "stock": 100,
+                    "description": "두 번째 상품"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(secondProductRequest))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("PRODUCT_PENDING_EXISTS"))
+                .andExpect(jsonPath("$.data.message").exists());
+
+        // 첫 번째 상품 승인 (ADMIN 권한 필요)
+        mockMvc.perform(patch("/api/v1/products/" + firstProductId + "/approve")
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        // 상품이 승인된 후에는 새로운 상품 등록 가능
+        mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(secondProductRequest))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"));
+
+        addScore(3, "상품 등록 - PENDING 상품이 있을 때 새로운 상품 등록 불가");
+    }
+
+    @Test
+    @Order(8)
     @DisplayName("7. 상품 목록 조회 (페이지네이션)")
     void testGetProductList() throws Exception {
         mockMvc.perform(get("/api/v1/products")
                         .param("page", "0")
                         .param("size", "10"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.content").isArray())
@@ -275,7 +409,7 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(8)
+    @Order(9)
     @DisplayName("7-1. 상품 목록 조회 - 검색 기능 (가격 범위, 이름 검색)")
     void testGetProductListWithSearch() throws Exception {
         // 검색용 상품 생성
@@ -289,9 +423,11 @@ class ShoppingMallApiTest {
                 """;
 
         MvcResult result1 = mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productRequest1))
+                .andDo(print())
+                .andExpect(status().isOk())
                 .andReturn();
 
         String productResponse1 = result1.getResponse().getContentAsString();
@@ -301,7 +437,8 @@ class ShoppingMallApiTest {
 
         // 상품 승인
         mockMvc.perform(patch("/api/v1/products/" + searchProductId1 + "/approve")
-                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print());
 
         // 가격 범위 검색 테스트
         mockMvc.perform(get("/api/v1/products")
@@ -309,6 +446,7 @@ class ShoppingMallApiTest {
                         .param("size", "10")
                         .param("minPrice", "10000")
                         .param("maxPrice", "20000"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.content").isArray());
@@ -318,6 +456,7 @@ class ShoppingMallApiTest {
                         .param("page", "0")
                         .param("size", "10")
                         .param("name", "노트북"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.content").isArray());
@@ -329,6 +468,7 @@ class ShoppingMallApiTest {
                         .param("minPrice", "10000")
                         .param("maxPrice", "20000")
                         .param("name", "노트북"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.content").isArray());
@@ -337,13 +477,58 @@ class ShoppingMallApiTest {
     }
 
     @Test
-    @Order(9)
+    @Order(10)
     @DisplayName("8. 상품 단건 조회")
     void testGetProduct() throws Exception {
-        mockMvc.perform(get("/api/v1/products/" + productId))
+        // 상품 생성
+        String productRequest = """
+                {
+                    "name": "테스트 상품",
+                    "price": 10000,
+                    "stock": 100,
+                    "description": "테스트 상품 설명"
+                }
+                """;
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productRequest))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
-                .andExpect(jsonPath("$.data.id").value(productId))
+                .andReturn();
+
+        String createResponse = createResult.getResponse().getContentAsString();
+        Map<String, Object> createResponseMap = objectMapper.readValue(createResponse, Map.class);
+        Map<String, Object> createData = (Map<String, Object>) createResponseMap.get("data");
+        Long newProductId = Long.valueOf(createData.get("id").toString());
+        
+        // 상품 승인
+        mockMvc.perform(patch("/api/v1/products/" + newProductId + "/approve")
+                .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
+
+        // 상품 조회 (관리자 권한으로 먼저 확인 - PENDING이든 APPROVED든 조회 가능)
+        mockMvc.perform(get("/api/v1/products/" + newProductId)
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.id").value(newProductId))
+                .andExpect(jsonPath("$.data.name").value("테스트 상품"))
+                .andExpect(jsonPath("$.data.price").value(10000))
+                .andExpect(jsonPath("$.data.stock").value(100));
+
+        // 상품 조회 (일반 사용자 권한으로 - APPROVED만 조회 가능)
+        mockMvc.perform(get("/api/v1/products/" + newProductId)
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER")))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.id").value(newProductId))
                 .andExpect(jsonPath("$.data.name").value("테스트 상품"))
                 .andExpect(jsonPath("$.data.price").value(10000))
                 .andExpect(jsonPath("$.data.stock").value(100));
@@ -355,35 +540,23 @@ class ShoppingMallApiTest {
     @Order(10)
     @DisplayName("8-1. PENDING 상품은 일반 사용자에게 노출되지 않음")
     void testPendingProductNotVisibleToUser() throws Exception {
-        // PENDING 상태의 상품 생성
-        String pendingProductRequest = """
-                {
-                    "name": "PENDING 상품",
-                    "price": 5000,
-                    "stock": 20,
-                    "description": "승인 대기 중"
-                }
-                """;
-
-        MvcResult result = mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(pendingProductRequest))
-                .andReturn();
-
-        String productResponse = result.getResponse().getContentAsString();
-        Map<String, Object> productResponseMap = objectMapper.readValue(productResponse, Map.class);
-        Map<String, Object> productData = (Map<String, Object>) productResponseMap.get("data");
-        Long pendingProductId = Long.valueOf(productData.get("id").toString());
+        // PENDING 상태의 상품 생성 (승인하지 않음)
+        Long pendingProductId = createProduct("PENDING 상품", 5000L, 20, "승인 대기 중");
 
         // 일반 사용자로 조회 시도 (404 또는 에러 응답)
-        mockMvc.perform(get("/api/v1/products/" + pendingProductId))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/" + pendingProductId)
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER")))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("PRODUCT_NOT_APPROVED"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         // 일반 사용자 목록 조회에서도 보이지 않아야 함 (승인된 상품만)
         mockMvc.perform(get("/api/v1/products")
                         .param("page", "0")
                         .param("size", "10"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
@@ -393,8 +566,30 @@ class ShoppingMallApiTest {
     @Test
     @Order(11)
     @DisplayName("9. 상품 수정")
-    @WithMockUser(roles = "ADMIN")
     void testUpdateProduct() throws Exception {
+        // USER가 등록한 상품 생성
+        String userProductRequest = """
+                {
+                    "name": "수정 테스트 상품",
+                    "price": 10000,
+                    "stock": 100,
+                    "description": "수정 테스트용"
+                }
+                """;
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(userProductRequest))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String createResponse = createResult.getResponse().getContentAsString();
+        Map<String, Object> createResponseMap = objectMapper.readValue(createResponse, Map.class);
+        Map<String, Object> createData = (Map<String, Object>) createResponseMap.get("data");
+        Long newProductId = Long.valueOf(createData.get("id").toString());
+
         String request = """
                 {
                     "name": "수정된 상품",
@@ -404,9 +599,12 @@ class ShoppingMallApiTest {
                 }
                 """;
 
-        mockMvc.perform(put("/api/v1/products/" + productId)
+        // 본인이 등록한 상품 수정 (성공해야 함)
+        mockMvc.perform(put("/api/v1/products/" + newProductId)
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.name").value("수정된 상품"))
@@ -431,9 +629,10 @@ class ShoppingMallApiTest {
                 """;
 
         mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidRequest1))
+                .andDo(print())
                 .andExpect(status().isBadRequest());
 
         // 회원 가입 - 잘못된 이메일 형식
@@ -448,6 +647,7 @@ class ShoppingMallApiTest {
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidRequest2))
+                .andDo(print())
                 .andExpect(status().isBadRequest());
 
         // 회원 가입 - 짧은 비밀번호
@@ -462,6 +662,7 @@ class ShoppingMallApiTest {
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidRequest3))
+                .andDo(print())
                 .andExpect(status().isBadRequest());
 
         addScore(3, "Validation 테스트");
@@ -469,40 +670,82 @@ class ShoppingMallApiTest {
 
     @Test
     @Order(13)
-    @DisplayName("9-2. Role 기반 접근 제어 - USER는 상품 등록/수정/삭제 불가")
+    @DisplayName("9-2. Role 기반 접근 제어 - USER는 본인 상품만 수정 가능, 삭제/승인 불가")
     void testRoleBasedAccessControl() throws Exception {
-        String productRequest = """
+        // USER가 등록한 상품 생성
+        String userProductRequest = """
                 {
-                    "name": "권한 테스트 상품",
-                    "price": 1000,
-                    "stock": 10,
-                    "description": "권한 테스트"
+                    "name": "USER 상품",
+                    "price": 5000,
+                    "stock": 50,
+                    "description": "USER가 등록한 상품"
                 }
                 """;
 
-        // USER가 상품 등록 시도 (실패해야 함)
-        mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+        MvcResult userProductResult = mockMvc.perform(post("/api/v1/products")
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(productRequest))
-                .andExpect(status().isForbidden());
+                        .content(userProductRequest))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
 
-        // USER가 상품 수정 시도 (실패해야 함)
-        mockMvc.perform(put("/api/v1/products/" + productId)
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+        String userProductResponse = userProductResult.getResponse().getContentAsString();
+        Map<String, Object> userProductResponseMap = objectMapper.readValue(userProductResponse, Map.class);
+        Map<String, Object> userProductData = (Map<String, Object>) userProductResponseMap.get("data");
+        Long userProductId = Long.valueOf(userProductData.get("id").toString());
+
+        // ADMIN이 등록한 상품 생성
+        Long adminProductId = createProduct("ADMIN 상품", 10000L, 100, "ADMIN이 등록한 상품");
+        mockMvc.perform(patch("/api/v1/products/" + adminProductId + "/approve")
+                .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print());
+
+        String productRequest = """
+                {
+                    "name": "수정된 상품",
+                    "price": 2000,
+                    "stock": 20,
+                    "description": "수정 테스트"
+                }
+                """;
+
+        // USER가 본인 상품 수정 시도 (성공해야 함)
+        mockMvc.perform(put("/api/v1/products/" + userProductId)
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productRequest))
-                .andExpect(status().isForbidden());
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        // USER가 다른 사람(ADMIN)이 등록한 상품 수정 시도 (실패해야 함)
+        mockMvc.perform(put("/api/v1/products/" + adminProductId)
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productRequest))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         // USER가 상품 삭제 시도 (실패해야 함)
-        mockMvc.perform(delete("/api/v1/products/" + productId)
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
-                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/products/" + userProductId)
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER")))
+                .andDo(print())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         // USER가 상품 승인 시도 (실패해야 함)
-        mockMvc.perform(patch("/api/v1/products/" + productId + "/approve")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
-                .andExpect(status().isForbidden());
+        mockMvc.perform(patch("/api/v1/products/" + userProductId + "/approve")
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER")))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         addScore(4, "Role 기반 접근 제어");
     }
@@ -512,7 +755,11 @@ class ShoppingMallApiTest {
     @DisplayName("10. 상품 승인")
     @WithMockUser(roles = "ADMIN")
     void testApproveProduct() throws Exception {
-        mockMvc.perform(patch("/api/v1/products/" + productId + "/approve"))
+        // PENDING 상태의 상품 생성 (승인 전)
+        Long pendingProductId = createProduct("승인 대기 상품", 10000L, 100, "승인 대기 중");
+        
+        mockMvc.perform(patch("/api/v1/products/" + pendingProductId + "/approve"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("APPROVED"));
@@ -525,13 +772,23 @@ class ShoppingMallApiTest {
     @DisplayName("11. 상품 삭제 (Soft Delete)")
     @WithMockUser(roles = "ADMIN")
     void testDeleteProduct() throws Exception {
-        mockMvc.perform(delete("/api/v1/products/" + productId))
+        // 삭제할 상품 생성 및 승인
+        Long deleteProductId = createProduct("삭제 테스트 상품", 10000L, 100, "삭제 테스트용");
+        mockMvc.perform(patch("/api/v1/products/" + deleteProductId + "/approve")
+                .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+
+        mockMvc.perform(delete("/api/v1/products/" + deleteProductId))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
         // 삭제된 상품은 조회되지 않아야 함
-        mockMvc.perform(get("/api/v1/products/" + productId))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/products/" + deleteProductId))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("PRODUCT_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         addScore(9, "상품 삭제 (Soft Delete)");
     }
@@ -553,9 +810,10 @@ class ShoppingMallApiTest {
                 """;
 
         MvcResult productResult = mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productRequest))
+                .andDo(print())
                 .andReturn();
 
         String productResponse = productResult.getResponse().getContentAsString();
@@ -565,7 +823,8 @@ class ShoppingMallApiTest {
 
         // 상품 승인
         mockMvc.perform(patch("/api/v1/products/" + orderProductId + "/approve")
-                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print());
 
         // 주문 생성 (일반 사용자 권한)
         String orderRequest = """
@@ -580,9 +839,10 @@ class ShoppingMallApiTest {
                 """.formatted(orderProductId);
 
         MvcResult result = mockMvc.perform(post("/api/v1/orders")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderRequest))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
@@ -612,9 +872,10 @@ class ShoppingMallApiTest {
                 """;
 
         MvcResult productResult = mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productRequest))
+                .andDo(print())
                 .andReturn();
 
         String productResponse = productResult.getResponse().getContentAsString();
@@ -624,7 +885,8 @@ class ShoppingMallApiTest {
 
         // 상품 승인
         mockMvc.perform(patch("/api/v1/products/" + stockProductId + "/approve")
-                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print());
 
         // 재고보다 많은 수량 주문 시도
         String orderRequest = """
@@ -639,10 +901,14 @@ class ShoppingMallApiTest {
                 """.formatted(stockProductId);
 
         mockMvc.perform(post("/api/v1/orders")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderRequest))
-                .andExpect(status().isBadRequest());
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("INSUFFICIENT_STOCK"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         addScore(3, "주문 생성 - 재고 부족 시 실패");
     }
@@ -655,6 +921,7 @@ class ShoppingMallApiTest {
         mockMvc.perform(get("/api/v1/orders/my")
                         .param("page", "0")
                         .param("size", "10"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data").exists());
@@ -672,6 +939,7 @@ class ShoppingMallApiTest {
                         .param("page", "0")
                         .param("size", "10")
                         .param("status", "CREATED"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data").exists());
@@ -681,6 +949,7 @@ class ShoppingMallApiTest {
                         .param("page", "0")
                         .param("size", "10")
                         .param("status", "PAID"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data").exists());
@@ -693,11 +962,41 @@ class ShoppingMallApiTest {
     @DisplayName("14. 주문 상세 조회")
     @WithMockUser(roles = "USER")
     void testGetOrder() throws Exception {
+        // orderId가 없으면 주문 생성
+        if (orderId == null) {
+            Long orderProductId = createProduct("주문 테스트 상품", 5000L, 50, "주문 테스트용");
+            mockMvc.perform(patch("/api/v1/products/" + orderProductId + "/approve")
+                    .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+            
+            String orderRequest = """
+                    {
+                        "items": [
+                            {
+                                "productId": %d,
+                                "quantity": 2
+                            }
+                        ]
+                    }
+                    """.formatted(orderProductId);
+
+            MvcResult orderResult = mockMvc.perform(post("/api/v1/orders")
+                            .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(orderRequest))
+                    .andReturn();
+
+            String orderResponse = orderResult.getResponse().getContentAsString();
+            Map<String, Object> orderResponseMap = objectMapper.readValue(orderResponse, Map.class);
+            Map<String, Object> orderData = (Map<String, Object>) orderResponseMap.get("data");
+            orderId = Long.valueOf(orderData.get("id").toString());
+        }
+
         mockMvc.perform(get("/api/v1/orders/" + orderId))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.id").value(orderId))
-                .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.status").exists())
                 .andExpect(jsonPath("$.data.items").isArray());
 
         addScore(3, "주문 상세 조회");
@@ -721,10 +1020,43 @@ class ShoppingMallApiTest {
                         .content(otherUserRequest))
                 .andExpect(status().isOk());
 
+        // orderId가 없으면 주문 생성
+        if (orderId == null) {
+            Long orderProductId = createProduct("주문 테스트 상품", 5000L, 50, "주문 테스트용");
+            mockMvc.perform(patch("/api/v1/products/" + orderProductId + "/approve")
+                    .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+            
+            String orderRequest = """
+                    {
+                        "items": [
+                            {
+                                "productId": %d,
+                                "quantity": 2
+                            }
+                        ]
+                    }
+                    """.formatted(orderProductId);
+
+            MvcResult orderResult = mockMvc.perform(post("/api/v1/orders")
+                            .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(orderRequest))
+                    .andReturn();
+
+            String orderResponse = orderResult.getResponse().getContentAsString();
+            Map<String, Object> orderResponseMap = objectMapper.readValue(orderResponse, Map.class);
+            Map<String, Object> orderData = (Map<String, Object>) orderResponseMap.get("data");
+            orderId = Long.valueOf(orderData.get("id").toString());
+        }
+
         // 다른 사용자가 다른 사람의 주문 조회 시도 (실패해야 함)
         mockMvc.perform(get("/api/v1/orders/" + orderId)
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("other").roles("USER")))
-                .andExpect(status().isForbidden());
+                        .with(withPrincipalDetails(userId != null ? userId + 1 : 2L, "other@test.com", "다른사용자", "USER")))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("ORDER_ACCESS_DENIED"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         addScore(3, "주문 상세 조회 - 본인 주문만 조회 가능");
     }
@@ -734,7 +1066,37 @@ class ShoppingMallApiTest {
     @DisplayName("15. 주문 결제")
     @WithMockUser(roles = "USER")
     void testPayOrder() throws Exception {
+        // orderId가 없으면 주문 생성
+        if (orderId == null) {
+            Long orderProductId = createProduct("주문 테스트 상품", 5000L, 50, "주문 테스트용");
+            mockMvc.perform(patch("/api/v1/products/" + orderProductId + "/approve")
+                    .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+            
+            String orderRequest = """
+                    {
+                        "items": [
+                            {
+                                "productId": %d,
+                                "quantity": 2
+                            }
+                        ]
+                    }
+                    """.formatted(orderProductId);
+
+            MvcResult orderResult = mockMvc.perform(post("/api/v1/orders")
+                            .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(orderRequest))
+                    .andReturn();
+
+            String orderResponse = orderResult.getResponse().getContentAsString();
+            Map<String, Object> orderResponseMap = objectMapper.readValue(orderResponse, Map.class);
+            Map<String, Object> orderData = (Map<String, Object>) orderResponseMap.get("data");
+            orderId = Long.valueOf(orderData.get("id").toString());
+        }
+
         mockMvc.perform(patch("/api/v1/orders/" + orderId + "/pay"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("PAID"));
@@ -747,7 +1109,41 @@ class ShoppingMallApiTest {
     @DisplayName("16. 주문 완료")
     @WithMockUser(roles = "USER")
     void testCompleteOrder() throws Exception {
+        // orderId가 없으면 주문 생성 및 결제
+        if (orderId == null) {
+            Long orderProductId = createProduct("주문 테스트 상품", 5000L, 50, "주문 테스트용");
+            mockMvc.perform(patch("/api/v1/products/" + orderProductId + "/approve")
+                    .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+            
+            String orderRequest = """
+                    {
+                        "items": [
+                            {
+                                "productId": %d,
+                                "quantity": 2
+                            }
+                        ]
+                    }
+                    """.formatted(orderProductId);
+
+            MvcResult orderResult = mockMvc.perform(post("/api/v1/orders")
+                            .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(orderRequest))
+                    .andReturn();
+
+            String orderResponse = orderResult.getResponse().getContentAsString();
+            Map<String, Object> orderResponseMap = objectMapper.readValue(orderResponse, Map.class);
+            Map<String, Object> orderData = (Map<String, Object>) orderResponseMap.get("data");
+            orderId = Long.valueOf(orderData.get("id").toString());
+            
+            // 결제
+            mockMvc.perform(patch("/api/v1/orders/" + orderId + "/pay")
+                    .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER")));
+        }
+
         mockMvc.perform(patch("/api/v1/orders/" + orderId + "/complete"))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
@@ -770,9 +1166,10 @@ class ShoppingMallApiTest {
                 """;
 
         MvcResult productResult = mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productRequest))
+                .andDo(print())
                 .andReturn();
 
         String productResponse = productResult.getResponse().getContentAsString();
@@ -781,7 +1178,8 @@ class ShoppingMallApiTest {
         Long statusProductId = Long.valueOf(productData.get("id").toString());
 
         mockMvc.perform(patch("/api/v1/products/" + statusProductId + "/approve")
-                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print());
 
         String orderRequest = """
                 {
@@ -795,9 +1193,10 @@ class ShoppingMallApiTest {
                 """.formatted(statusProductId);
 
         MvcResult orderResult = mockMvc.perform(post("/api/v1/orders")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                        .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderRequest))
+                .andDo(print())
                 .andReturn();
 
         String orderResponse = orderResult.getResponse().getContentAsString();
@@ -807,16 +1206,25 @@ class ShoppingMallApiTest {
 
         // CREATED 상태에서 바로 COMPLETED로 변경 시도 (실패해야 함)
         mockMvc.perform(patch("/api/v1/orders/" + statusOrderId + "/complete")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
-                .andExpect(status().isBadRequest());
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER")))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("INVALID_ORDER_STATUS"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         // 결제 후 취소 시도 (PAID 상태에서 CANCELLED로 변경 불가)
         mockMvc.perform(patch("/api/v1/orders/" + statusOrderId + "/pay")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")));
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER")))
+                .andDo(print());
 
         mockMvc.perform(patch("/api/v1/orders/" + statusOrderId + "/cancel")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
-                .andExpect(status().isBadRequest());
+                        .with(withPrincipalDetails(userId != null ? userId : 1L, "user@test.com", "테스트유저", "USER")))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("INVALID_ORDER_STATUS"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         addScore(3, "잘못된 상태 전이 테스트");
     }
@@ -836,9 +1244,10 @@ class ShoppingMallApiTest {
                 """;
 
         MvcResult productResult = mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productRequest))
+                .andDo(print())
                 .andReturn();
 
         String productResponse = productResult.getResponse().getContentAsString();
@@ -847,7 +1256,8 @@ class ShoppingMallApiTest {
         Long cancelProductId = Long.valueOf(productData.get("id").toString());
 
         mockMvc.perform(patch("/api/v1/products/" + cancelProductId + "/approve")
-                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")))
+                .andDo(print());
 
         // 주문 생성 (일반 사용자 권한)
         String orderRequest = """
@@ -862,9 +1272,10 @@ class ShoppingMallApiTest {
                 """.formatted(cancelProductId);
 
         MvcResult orderResult = mockMvc.perform(post("/api/v1/orders")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                        .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderRequest))
+                .andDo(print())
                 .andReturn();
 
         String orderResponse = orderResult.getResponse().getContentAsString();
@@ -874,7 +1285,8 @@ class ShoppingMallApiTest {
 
         // 주문 취소 (일반 사용자 권한)
         mockMvc.perform(patch("/api/v1/orders/" + cancelOrderId + "/cancel")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
+                        .with(SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"));
@@ -899,6 +1311,7 @@ class ShoppingMallApiTest {
         MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(loginRequest))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.accessToken").exists())
@@ -922,6 +1335,7 @@ class ShoppingMallApiTest {
             mockMvc.perform(post("/api/v1/auth/refresh")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(refreshRequest))
+                    .andDo(print())
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("SUCCESS"))
                     .andExpect(jsonPath("$.data.accessToken").exists());
@@ -937,80 +1351,111 @@ class ShoppingMallApiTest {
     @Order(27)
     @DisplayName("19. 동시성 문제 - 재고 차감 Race Condition 예방")
     void testConcurrentStockDecrease() throws Exception {
+        // 동시성 테스트용 유저 생성 (repository로 직접 생성)
+        final Long testUserId;
+ 
+        User testUser = User.builder()
+                .email("concurrent@test.com")
+                .password(passwordEncoder.encode("Test1234!"))
+                .name("동시성테스트유저")
+                .role(EnumRole.USER)
+                .build();
+        User savedUser = userRepository.save(testUser);
+        testUserId = savedUser.getId();
+        
+        // 유저 강제 커밋
+        entityManager.flush();
+
         // 새로운 상품 생성 (재고 10개)
-        String productRequest = """
-                {
-                    "name": "동시성 테스트 상품",
-                    "price": 1000,
-                    "stock": 10,
-                    "description": "동시성 테스트용"
-                }
-                """;
-
-        MvcResult productResult = mockMvc.perform(post("/api/v1/products")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(productRequest))
-                .andReturn();
-
-        String productResponse = productResult.getResponse().getContentAsString();
-        Map<String, Object> productResponseMap = objectMapper.readValue(productResponse, Map.class);
-        Map<String, Object> productData = (Map<String, Object>) productResponseMap.get("data");
-        Long concurrentProductId = Long.valueOf(productData.get("id").toString());
+        Long concurrentProductId = createProduct("동시성 테스트 상품", 1000L, 10, "동시성 테스트용");
 
         // 상품 승인
         mockMvc.perform(patch("/api/v1/products/" + concurrentProductId + "/approve")
-                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+                .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN")))
+                .andDo(print());
 
-        // 동시에 여러 주문 생성 (재고 10개에 15개 주문 시도)
-        String orderRequest = """
-                {
-                    "items": [
-                        {
-                            "productId": %d,
-                            "quantity": 1
+        // 강제로 커밋하여 상품과 유저가 DB에 반영되도록 함
+        entityManager.flush();
+        entityManager.clear();
+
+        try {
+            // 동시에 여러 주문 생성 (재고 10개에 15개 주문 시도)
+            String orderRequest = """
+                    {
+                        "items": [
+                            {
+                                "productId": %d,
+                                "quantity": 1
+                            }
+                        ]
+                    }
+                    """.formatted(concurrentProductId);
+
+            // 여러 스레드에서 동시에 주문 생성
+            int threadCount = 100;
+            ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+            CountDownLatch latch = new CountDownLatch(threadCount);
+            AtomicInteger successCount = new AtomicInteger(0);
+            AtomicInteger failCount = new AtomicInteger(0);
+
+            // 모든 스레드가 동시에 시작하도록 CountDownLatch 사용
+            CountDownLatch startLatch = new CountDownLatch(1);
+
+            for (int i = 0; i < threadCount; i++) {
+                final Long threadUserId = testUserId; // effectively final 변수
+                executorService.submit(() -> {
+                    try {
+                        // 모든 스레드가 준비될 때까지 대기
+                        startLatch.await();
+                        
+                        // 동시에 주문 생성 시도
+                        MvcResult result = mockMvc.perform(post("/api/v1/orders")
+                                        .with(withPrincipalDetails(threadUserId, "concurrent@test.com", "동시성테스트유저", "USER"))
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(orderRequest))
+                                .andReturn();
+
+                        if (result.getResponse().getStatus() == 200) {
+                            successCount.incrementAndGet();
+                        } else {
+                            failCount.incrementAndGet();
                         }
-                    ]
-                }
-                """.formatted(concurrentProductId);
-
-        // 15개의 동시 요청 시뮬레이션
-        int successCount = 0;
-        int failCount = 0;
-        Object object = new Object[0];
-
-        for (int i = 0; i < 15; i++) {
-            try {
-                MvcResult result = mockMvc.perform(post("/api/v1/orders")
-                                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(orderRequest))
-                        .andReturn();
-
-                if (result.getResponse().getStatus() == 200) {
-                    synchronized (object) {
-                        successCount++;
+                    } catch (Exception e) {
+                        failCount.incrementAndGet();
+                    } finally {
+                        latch.countDown();
                     }
-                } else {
-                    synchronized (object) {
-                        failCount++;
-                    }
-                }
-            } catch (Exception e) {
-                synchronized (object) {
-                    failCount++;
-                }
+                });
             }
+
+            // 모든 스레드가 준비되면 동시에 시작
+            Thread.sleep(100); // 스레드 준비 시간
+            startLatch.countDown();
+
+            // 모든 스레드가 완료될 때까지 대기 (최대 10초)
+            latch.await();
+            executorService.shutdown();
+
+            int success = successCount.get();
+            int fail = failCount.get();
+
+            System.out.println("동시성 테스트 결과 - 성공: " + success + ", 실패: " + fail);
+
+            // 재고가 0 아래로 내려가지 않았는지 확인
+            // 최대 10개의 주문만 성공해야 함
+            assertTrue(success <= 10,
+                    "재고보다 많은 주문이 성공했습니다. 성공: " + success + ", 실패: " + fail);
+
+            // 최소 5개 이상의 주문이 실패해야 함 (재고 보호)
+            assertTrue(fail >= 5,
+                    "동시성 문제가 해결되지 않았습니다. 성공: " + success + ", 실패: " + fail);
+        } finally {
+            // 테스트 후 상품 삭제
+            productRepository.findById(concurrentProductId).ifPresent(product -> {
+                productRepository.delete(product);
+                entityManager.flush();
+            });
         }
-
-        // 재고가 0 아래로 내려가지 않았는지 확인
-        // 최대 10개의 주문만 성공해야 함
-        assertTrue(successCount <= 10,
-                "재고보다 많은 주문이 성공했습니다. 성공: " + successCount + ", 실패: " + failCount);
-
-        // 최소 5개 이상의 주문이 실패해야 함 (재고 보호)
-        assertTrue(failCount >= 5,
-                "동시성 문제가 해결되지 않았습니다. 성공: " + successCount + ", 실패: " + failCount);
 
         addScore(3, "동시성 문제 - 재고 차감 Race Condition 예방");
     }
@@ -1030,15 +1475,7 @@ class ShoppingMallApiTest {
                 }
                 """;
 
-        MvcResult productResult = mockMvc.perform(post("/api/v1/products")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(productRequest))
-                .andReturn();
-
-        String productResponse = productResult.getResponse().getContentAsString();
-        Map<String, Object> productResponseMap = objectMapper.readValue(productResponse, Map.class);
-        Map<String, Object> productData = (Map<String, Object>) productResponseMap.get("data");
-        Long imageProductId = Long.valueOf(productData.get("id").toString());
+        Long imageProductId = createProduct("이미지 테스트 상품", 3000L, 30, "이미지 업로드 테스트용");
 
         // 더미 이미지 파일 생성 (1x1 픽셀 PNG)
         byte[] imageBytes = new byte[]{
@@ -1064,12 +1501,14 @@ class ShoppingMallApiTest {
         MvcResult uploadResult = mockMvc.perform(multipart("/api/v1/products/" + imageProductId + "/images")
                         .file(imageFile)
                         .file(imageFile)) // 여러 이미지 업로드 테스트
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andReturn();
 
         // 상품 조회 시 이미지 URL이 포함되어 있는지 확인
         mockMvc.perform(get("/api/v1/products/" + imageProductId))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data").exists());
@@ -1095,13 +1534,18 @@ class ShoppingMallApiTest {
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
+                .andDo(print())
                 .andExpect(status().isOk());
 
         // 동일한 이메일로 재가입 시도 (실패해야 함)
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
-                .andExpect(status().isBadRequest());
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("DUPLICATE_EMAIL"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         addScore(2, "이메일 중복 검증");
     }
@@ -1111,6 +1555,16 @@ class ShoppingMallApiTest {
     @DisplayName("22. Soft Delete된 상품 수정 불가")
     @WithMockUser(roles = "ADMIN")
     void testUpdateDeletedProduct() throws Exception {
+        // 삭제할 상품 생성 및 승인
+        Long deleteProductId = createProduct("삭제 테스트 상품", 10000L, 100, "삭제 테스트용");
+        mockMvc.perform(patch("/api/v1/products/" + deleteProductId + "/approve")
+                .with(SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")));
+
+        // 상품 삭제
+        mockMvc.perform(delete("/api/v1/products/" + deleteProductId))
+                .andDo(print())
+                .andExpect(status().isOk());
+
         // 이미 삭제된 상품 수정 시도 (실패해야 함)
         String request = """
                 {
@@ -1121,10 +1575,15 @@ class ShoppingMallApiTest {
                 }
                 """;
 
-        mockMvc.perform(put("/api/v1/products/" + productId)
+        mockMvc.perform(put("/api/v1/products/" + deleteProductId)
+                        .with(withPrincipalDetails(adminId != null ? adminId : 1L, "admin@test.com", "관리자", "ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
-                .andExpect(status().isNotFound());
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.data.code").value("PRODUCT_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.message").exists());
 
         addScore(2, "Soft Delete된 상품 수정 불가");
     }

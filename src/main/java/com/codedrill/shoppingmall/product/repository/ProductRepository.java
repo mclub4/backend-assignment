@@ -1,7 +1,6 @@
 package com.codedrill.shoppingmall.product.repository;
 
 import com.codedrill.shoppingmall.product.entity.Product;
-import com.codedrill.shoppingmall.product.entity.ProductStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -35,5 +34,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     @Query("SELECT p FROM Product p WHERE p.id = :id AND p.deletedAt IS NULL")
     Optional<Product> findByIdAndNotDeleted(@Param("id") Long id);
+
+    @Query("SELECT COUNT(p) FROM Product p WHERE p.userId = :userId AND p.status = 'PENDING' AND p.deletedAt IS NULL")
+    long countPendingProductsByUserId(@Param("userId") Long userId);
 }
 

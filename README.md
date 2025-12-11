@@ -89,6 +89,8 @@
   - `price` (Number, 필수, 0 이상)
   - `stock` (Number, 필수, 0 이상)
   - `description` (String, 옵션)
+- **인증**
+  - 인증된 사용자(USER, ADMIN) 모두 등록 가능
 - **응답**
   - 타입: `Response<ProductResponse>`
   - `ProductResponse`
@@ -103,6 +105,8 @@
   - Bean Validation 사용 (예: `@NotBlank`, `@Min`, `@Size` 등)
   - 생성 직후 `status` 는 반드시 `PENDING`
   - `APPROVED` 되기 전까지는 일반 사용자 상품 목록/단건 조회에 노출되지 않음
+  - 상품 등록 시 등록한 사용자 정보가 저장됨
+  - **한 사용자는 PENDING 상태인 상품이 하나 이상 있으면 새로운 상품을 등록할 수 없음** (기존 PENDING 상품이 승인되거나 취소되어야 새로운 상품 등록 가능)
 
 #### 상품 목록 조회 (페이지네이션 + 검색)
 - **HTTP Method / Path**
@@ -156,12 +160,16 @@
   - `price` (Number, 필수, 0 이상)
   - `stock` (Number, 필수, 0 이상)
   - `description` (String, 옵션)
+- **인증**
+  - 인증된 사용자 중 **등록한 사용자만** 수정 가능
+  - ADMIN은 모든 상품 수정 가능
 - **응답**
   - 타입: `Response<ProductResponse>`
 - **요구사항**
   - 위 필드들을 업데이트할 수 있어야 함
   - Validation 적용
   - Soft Delete 된 상품은 수정 불가 → 에러 응답
+  - 본인이 등록한 상품이 아니면 수정 불가 → 403 에러 응답
 
 #### 상품 삭제 (Soft Delete)
 - **HTTP Method / Path**
@@ -220,9 +228,11 @@
 
 - **접근 제어 정책 예시**
   - **`ADMIN`**
-    - 상품 생성 / 수정 / 삭제 / 승인 가능
+    - 상품 생성 / 수정(모든 상품) / 삭제 / 승인 가능
   - **`USER`**
-    - 승인 완료(`APPROVED`) 상품 조회만 가능 (등록/수정/삭제/승인 불가)
+    - 상품 등록 가능
+    - 본인이 등록한 상품만 수정 가능
+    - 승인 완료(`APPROVED`) 상품 조회만 가능 (삭제/승인 불가)
 
 ### 2-2. 주문 도메인 설계
 

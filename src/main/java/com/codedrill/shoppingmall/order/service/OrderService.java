@@ -1,7 +1,6 @@
 package com.codedrill.shoppingmall.order.service;
 
 import com.codedrill.shoppingmall.common.entity.PrincipalDetails;
-import com.codedrill.shoppingmall.common.enums.EnumRole;
 import com.codedrill.shoppingmall.common.exception.BusinessException;
 import com.codedrill.shoppingmall.common.exception.ErrorCode;
 import com.codedrill.shoppingmall.common.util.SecurityUtil;
@@ -12,7 +11,7 @@ import com.codedrill.shoppingmall.order.entity.OrderStatus;
 import com.codedrill.shoppingmall.order.repository.OrderItemRepository;
 import com.codedrill.shoppingmall.order.repository.OrderRepository;
 import com.codedrill.shoppingmall.product.entity.Product;
-import com.codedrill.shoppingmall.product.entity.ProductStatus;
+import com.codedrill.shoppingmall.common.enums.EnumProductStatus;
 import com.codedrill.shoppingmall.product.repository.ProductRepository;
 import com.codedrill.shoppingmall.user.entity.User;
 import com.codedrill.shoppingmall.user.repository.UserRepository;
@@ -31,6 +30,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Deprecated
 public class OrderService {
 
     // OrderItem 생성 전 임시 데이터 클래스
@@ -76,7 +76,7 @@ public class OrderService {
                             .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
                     // 승인된 상품만 주문 가능
-                    if (product.getStatus() != ProductStatus.APPROVED) {
+                    if (product.getStatus() != EnumProductStatus.APPROVED) {
                         throw new BusinessException(ErrorCode.PRODUCT_NOT_APPROVED);
                     }
 

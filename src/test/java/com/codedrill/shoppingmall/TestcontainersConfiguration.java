@@ -7,6 +7,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+@Deprecated
 @TestConfiguration(proxyBeanMethods = false)
 class TestcontainersConfiguration {
 
