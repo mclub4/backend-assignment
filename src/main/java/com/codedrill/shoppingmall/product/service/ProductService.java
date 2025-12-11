@@ -1,5 +1,6 @@
 package com.codedrill.shoppingmall.product.service;
 
+import com.codedrill.shoppingmall.common.entity.PrincipalDetails;
 import com.codedrill.shoppingmall.common.exception.BusinessException;
 import com.codedrill.shoppingmall.common.exception.ErrorCode;
 import com.codedrill.shoppingmall.common.util.SecurityUtil;
@@ -42,15 +43,27 @@ public class ProductService {
 
     public ProductPageResponse getProductList(
             Integer page, Integer size,
-            Long minPrice, Long maxPrice, String name
+            Long minPrice, Long maxPrice, String name, String status,
+            PrincipalDetails user
     ) {
         Pageable pageable = PageRequest.of(page, size);
         
-        // 일반 사용자는 APPROVED만, ADMIN은 모두 조회 가능
-        ProductStatus status = SecurityUtil.isAdmin() ? null : ProductStatus.APPROVED;
+        // 상태 처리: ADMIN은 Query Param의 status 사용, 일반 사용자는 APPROVED만
+        String statusString;
+        if (SecurityUtil.isAdmin(user)) {
+            // ADMIN인 경우 Query Param의 status를 사용 (null이면 모든 상태 조회)
+            ProductStatus productStatus = parseStatus(status);
+            statusString = productStatus != null ? productStatus.name() : null;
+        } else {
+            // 일반 사용자는 항상 APPROVED만 조회
+            statusString = ProductStatus.APPROVED.name();
+        }
+        
+        // 상품명 전처리: null 체크, trim, 빈 문자열 처리
+        String processedName = preprocessName(name);
         
         Page<Product> productPage = productRepository.findProducts(
-                status, minPrice, maxPrice, name, pageable
+                statusString, minPrice, maxPrice, processedName, pageable
         );
 
         List<ProductSummary> content = productPage.getContent().stream()
@@ -66,11 +79,11 @@ public class ProductService {
                 .build();
     }
 
-    public ProductDetailResponse getProduct(Long id) {
+    public ProductDetailResponse getProduct(Long id, PrincipalDetails user) {
         Product product = findByIdAndNotDeleted(id);
         
         // 일반 사용자는 APPROVED만 조회 가능
-        if (!SecurityUtil.isAdmin() && product.getStatus() != ProductStatus.APPROVED) {
+        if (!SecurityUtil.isAdmin(user) && product.getStatus() != ProductStatus.APPROVED) {
             throw new BusinessException(ErrorCode.PRODUCT_NOT_APPROVED);
         }
         
@@ -100,9 +113,9 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductResponse approveProduct(Long id) {
+    public ProductResponse approveProduct(Long id, PrincipalDetails user) {
         // ADMIN만 승인 가능
-        if (!SecurityUtil.isAdmin()) {
+        if (!SecurityUtil.isAdmin(user)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
@@ -157,5 +170,42 @@ public class ProductService {
                 .status(product.getStatus().name())
                 .build();
     }
+
+    /**
+     * 상품명 검색 파라미터 전처리
+     * - null 체크
+     * - 앞뒤 공백 제거
+     * - 빈 문자열인 경우 null 반환 (검색 조건에서 제외)
+     */
+    private String preprocessName(String name) {
+        if (name == null) {
+            return null;
+        }
+        
+        String trimmed = name.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        
+        return trimmed;
+    }
+
+    /**
+     * 상태 문자열을 ProductStatus enum으로 변환
+     * - null이거나 빈 문자열이면 null 반환 (모든 상태 조회)
+     * - 유효하지 않은 값이면 예외 발생
+     */
+    private ProductStatus parseStatus(String status) {
+        if (status == null || status.trim().isEmpty()) {
+            return null;
+        }
+        
+        try {
+            return ProductStatus.valueOf(status.toUpperCase().trim());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_PRODUCT_STATUS);
+        }
+    }
+
 }
 

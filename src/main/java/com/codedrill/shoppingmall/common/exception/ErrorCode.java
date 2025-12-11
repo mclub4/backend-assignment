@@ -25,6 +25,7 @@ public enum ErrorCode {
     PRODUCT_NOT_APPROVED("PRODUCT_NOT_APPROVED", "승인되지 않은 상품입니다."),
     PRODUCT_ALREADY_APPROVED("PRODUCT_ALREADY_APPROVED", "이미 승인된 상품입니다."),
     PRODUCT_NOT_PENDING("PRODUCT_NOT_PENDING", "승인 대기 중인 상품만 승인할 수 있습니다."),
+    INVALID_PRODUCT_STATUS("INVALID_PRODUCT_STATUS", "유효하지 않은 상품 상태입니다."),
     
     // 주문
     ORDER_NOT_FOUND("ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."),

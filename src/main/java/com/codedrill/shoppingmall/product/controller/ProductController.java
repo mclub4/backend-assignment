@@ -1,6 +1,7 @@
 package com.codedrill.shoppingmall.product.controller;
 
 import com.codedrill.shoppingmall.common.consts.RestUriConst;
+import com.codedrill.shoppingmall.common.entity.PrincipalDetails;
 import com.codedrill.shoppingmall.common.response.Response;
 import com.codedrill.shoppingmall.product.dto.*;
 import com.codedrill.shoppingmall.product.service.ProductService;
@@ -8,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @Slf4j
@@ -28,20 +30,25 @@ public class ProductController {
     @GetMapping
     @Operation(summary = "상품 목록 조회")
     public Response<ProductPageResponse> getProductList(
-            @RequestParam(defaultValue = "0") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            @RequestParam(required = false) Long minPrice,
-            @RequestParam(required = false) Long maxPrice,
-            @RequestParam(required = false) String name
-    ) {
-        ProductPageResponse productPage = productService.getProductList(page, size, minPrice, maxPrice, name);
+            @RequestParam(value = "page", defaultValue = "0") Integer page,
+            @RequestParam(value = "size", defaultValue = "10") Integer size,
+            @RequestParam(value = "minPrice", required = false) Long minPrice,
+            @RequestParam(value = "maxPrice", required = false) Long maxPrice,
+            @RequestParam(value = "name", required = false) String name,
+            @RequestParam(value = "status", required = false) String status,
+            @AuthenticationPrincipal PrincipalDetails user
+            ) {
+        ProductPageResponse productPage = productService.getProductList(page, size, minPrice, maxPrice, name, status, user);
         return Response.success(productPage);
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "상품 단건 조회")
-    public Response<ProductDetailResponse> getProduct(@PathVariable Long id) {
-        ProductDetailResponse product = productService.getProduct(id);
+    public Response<ProductDetailResponse> getProduct(
+            @PathVariable Long id,
+            @AuthenticationPrincipal PrincipalDetails user
+    ) {
+        ProductDetailResponse product = productService.getProduct(id, user);
         return Response.success(product);
     }
 
@@ -64,8 +71,11 @@ public class ProductController {
 
     @PatchMapping("/{id}/approve")
     @Operation(summary = "상품 승인")
-    public Response<ProductResponse> approveProduct(@PathVariable Long id) {
-        ProductResponse product = productService.approveProduct(id);
+    public Response<ProductResponse> approveProduct(
+            @PathVariable Long id,
+            @AuthenticationPrincipal PrincipalDetails user
+    ) {
+        ProductResponse product = productService.approveProduct(id, user);
         return Response.success(product);
     }
 }

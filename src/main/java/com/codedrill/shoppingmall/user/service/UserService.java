@@ -70,6 +70,7 @@ public class UserService {
         String accessToken = jwtUtil.generateAccessToken(
                 user.getId(),
                 user.getEmail(),
+                user.getName(),
                 user.getRole().name()
         );
 

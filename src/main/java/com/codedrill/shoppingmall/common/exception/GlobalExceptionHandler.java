@@ -11,9 +11,11 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.HashMap;
@@ -131,6 +133,53 @@ public class GlobalExceptionHandler {
         Response<Response.ErrorData> response = Response.error(
             ErrorCode.VALIDATION_ERROR.getCode(),
             message
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Response<Response.ErrorData>> handleMissingServletRequestParameterException(
+            MissingServletRequestParameterException e) {
+        log.warn("MissingServletRequestParameterException: 필수 파라미터 '{}'가 누락되었습니다.", e.getParameterName());
+        String message = String.format("필수 파라미터 '%s'가 누락되었습니다.", e.getParameterName());
+        Response<Response.ErrorData> response = Response.error(
+            ErrorCode.VALIDATION_ERROR.getCode(),
+            message
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Response<Response.ErrorData>> handleMethodArgumentTypeMismatchException(
+            MethodArgumentTypeMismatchException e) {
+        log.warn("MethodArgumentTypeMismatchException: 파라미터 '{}'의 타입이 올바르지 않습니다. 요청값: '{}', 예상 타입: {}", 
+                e.getName(), e.getValue(), e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "알 수 없음");
+        String message = String.format("파라미터 '%s'의 타입이 올바르지 않습니다.", e.getName());
+        Response<Response.ErrorData> response = Response.error(
+            ErrorCode.VALIDATION_ERROR.getCode(),
+            message
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Response<Response.ErrorData>> handleIllegalArgumentException(
+            IllegalArgumentException e) {
+        // 파라미터 이름 관련 에러인지 확인
+        if (e.getMessage() != null && (e.getMessage().contains("parameter name") || 
+                                     e.getMessage().contains("Name for argument"))) {
+            log.warn("IllegalArgumentException (Parameter name issue): {}", e.getMessage());
+            Response<Response.ErrorData> response = Response.error(
+                ErrorCode.VALIDATION_ERROR.getCode(),
+                "요청 파라미터를 처리할 수 없습니다. 파라미터 이름을 확인해주세요."
+            );
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+        // 다른 IllegalArgumentException은 일반 예외로 처리 (일반 Exception 핸들러로 전달)
+        log.warn("IllegalArgumentException: {}", e.getMessage());
+        Response<Response.ErrorData> response = Response.error(
+            ErrorCode.VALIDATION_ERROR.getCode(),
+            e.getMessage() != null ? e.getMessage() : "잘못된 인자가 전달되었습니다."
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }

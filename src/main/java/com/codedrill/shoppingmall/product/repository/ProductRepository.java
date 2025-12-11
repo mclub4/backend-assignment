@@ -9,18 +9,24 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long> {
 
-    @Query("SELECT p FROM Product p WHERE p.deletedAt IS NULL " +
+    @Query(value = "SELECT p.* FROM products p WHERE p.deleted_at IS NULL " +
            "AND (:status IS NULL OR p.status = :status) " +
            "AND (:minPrice IS NULL OR p.price >= :minPrice) " +
            "AND (:maxPrice IS NULL OR p.price <= :maxPrice) " +
-           "AND (:name IS NULL OR p.name LIKE %:name%)")
+           "AND (:name IS NULL OR p.name ILIKE '%' || :name || '%')",
+           countQuery = "SELECT COUNT(p.id) FROM products p WHERE p.deleted_at IS NULL " +
+           "AND (:status IS NULL OR p.status = :status) " +
+           "AND (:minPrice IS NULL OR p.price >= :minPrice) " +
+           "AND (:maxPrice IS NULL OR p.price <= :maxPrice) " +
+           "AND (:name IS NULL OR p.name ILIKE '%' || :name || '%')",
+           nativeQuery = true)
     Page<Product> findProducts(
-            @Param("status") ProductStatus status,
+            @Param("status") String status,
             @Param("minPrice") Long minPrice,
             @Param("maxPrice") Long maxPrice,
             @Param("name") String name,
@@ -28,6 +34,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     );
 
     @Query("SELECT p FROM Product p WHERE p.id = :id AND p.deletedAt IS NULL")
-    java.util.Optional<Product> findByIdAndNotDeleted(@Param("id") Long id);
+    Optional<Product> findByIdAndNotDeleted(@Param("id") Long id);
 }
 
